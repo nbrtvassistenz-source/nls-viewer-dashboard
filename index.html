@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -717,13 +718,30 @@ function decodeShareData(str) {
   }
 }
 function buildShareUrl(includeKey) {
+  // Compact format: only IDs + interval + optional key
   const data = {
-    streams: (config.streams || []).map(s => ({ id: s.id, raw: s.raw })),
-    interval: config.interval || 20,
+    s: (config.streams || []).map(s => s.id),
+    i: config.interval || 20,
   };
-  if (includeKey && config.apiKey) data.apiKey = config.apiKey;
+  if (includeKey && config.apiKey) data.k = config.apiKey;
   const base = location.origin + location.pathname;
   return base + '#share=' + encodeShareData(data);
+}
+function normalizeShared(data) {
+  // Supports new compact format ({s,i,k}) and legacy ({streams,interval,apiKey})
+  if (Array.isArray(data.s)) {
+    return {
+      streams: data.s.filter(id => typeof id === 'string' && /^[a-zA-Z0-9_-]{11}$/.test(id))
+                     .map(id => ({ id, raw: 'https://youtu.be/' + id })),
+      interval: data.i || 20,
+      apiKey: data.k,
+    };
+  }
+  return {
+    streams: (data.streams || []).map(s => ({ id: s.id, raw: s.raw || 'https://youtu.be/' + s.id })),
+    interval: data.interval || 20,
+    apiKey: data.apiKey,
+  };
 }
 
 // ---------- Stream ID parsing ----------
@@ -1217,7 +1235,8 @@ document.getElementById('shareModal').onclick = (e) => {
 
 // ---------- Import prompt wiring ----------
 let pendingImport = null;
-function showImportPrompt(data) {
+function showImportPrompt(raw) {
+  const data = normalizeShared(raw);
   pendingImport = data;
   const count = (data.streams || []).length;
   document.getElementById('importSummary').textContent =
@@ -1259,7 +1278,7 @@ try {
 const hashMatch = location.hash.match(/^#share=(.+)$/);
 if (hashMatch) {
   const shared = decodeShareData(hashMatch[1]);
-  if (shared && Array.isArray(shared.streams) && shared.streams.length > 0) {
+  if (shared && (Array.isArray(shared.s) || Array.isArray(shared.streams))) {
     showImportPrompt(shared);
   }
 } else if (!config.apiKey || config.streams.length === 0) {
