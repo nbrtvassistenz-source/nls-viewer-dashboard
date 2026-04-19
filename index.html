@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -557,6 +558,7 @@
     </div>
     <div class="header-right">
       <div class="status-badge" id="statusBadge">Lade…</div>
+      <button class="btn" id="shareBtn">Teilen</button>
       <button class="btn" id="settingsBtn">Einstellungen</button>
     </div>
   </header>
@@ -637,6 +639,47 @@
   </div>
 </div>
 
+<!-- Share modal -->
+<div class="modal-backdrop" id="shareModal">
+  <div class="modal">
+    <h2>Dashboard teilen</h2>
+    <div class="help-text" style="margin-bottom: 14px;">
+      Diese URL enthält deine komplette Konfiguration. Wer sie öffnet, bekommt das gleiche Setup automatisch angeboten.
+    </div>
+
+    <label style="display: flex; align-items: center; gap: 8px; margin-top: 0; cursor: pointer;">
+      <input type="checkbox" id="shareIncludeKey" style="width: auto; margin: 0;">
+      <span>API-Key mit einschließen</span>
+    </label>
+    <div id="shareKeyWarning" class="help-text" style="margin-top: 6px; color: #f0a868; display: none;">
+      ⚠️ Mit eingeschlossenem Key kann jeder, der den Link hat, deine YouTube-API-Quota verbrauchen. Nur im internen Team teilen — oder den Key in der Google-Cloud-Console auf eine Domain beschränken.
+    </div>
+
+    <label style="margin-top: 20px;">Link</label>
+    <textarea id="shareUrlField" readonly rows="4" style="font-family: ui-monospace, monospace; font-size: 12px;"></textarea>
+
+    <div class="modal-actions">
+      <button class="btn" id="shareCloseBtn">Schließen</button>
+      <button class="btn btn-primary" id="shareCopyBtn">Link kopieren</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import prompt modal -->
+<div class="modal-backdrop" id="importModal">
+  <div class="modal">
+    <h2>Konfiguration importieren?</h2>
+    <div class="help-text" id="importSummary" style="margin-bottom: 16px;"></div>
+    <div id="importKeyWarn" class="help-text" style="margin-bottom: 16px; color: #f0a868; display: none;">
+      Der Link enthält auch einen API-Key — er überschreibt deinen aktuellen Key.
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="importCancelBtn">Abbrechen</button>
+      <button class="btn btn-primary" id="importConfirmBtn">Importieren</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ---------- State & Storage ----------
 const STORAGE_KEY = 'live-viewer-dashboard-v1';
@@ -656,6 +699,32 @@ function loadConfig() {
 }
 function saveConfig() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+}
+
+// ---------- Share / Import via URL ----------
+function encodeShareData(data) {
+  // UTF-8 safe base64url
+  const json = JSON.stringify(data);
+  const b64 = btoa(unescape(encodeURIComponent(json)));
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function decodeShareData(str) {
+  try {
+    const b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    const json = decodeURIComponent(escape(atob(b64)));
+    return JSON.parse(json);
+  } catch (e) {
+    return null;
+  }
+}
+function buildShareUrl(includeKey) {
+  const data = {
+    streams: (config.streams || []).map(s => ({ id: s.id, raw: s.raw })),
+    interval: config.interval || 20,
+  };
+  if (includeKey && config.apiKey) data.apiKey = config.apiKey;
+  const base = location.origin + location.pathname;
+  return base + '#share=' + encodeShareData(data);
 }
 
 // ---------- Stream ID parsing ----------
@@ -1105,13 +1174,96 @@ document.querySelectorAll('.time-range button').forEach(b => {
   };
 });
 
+// ---------- Share modal wiring ----------
+function openShareModal() {
+  document.getElementById('shareIncludeKey').checked = false;
+  document.getElementById('shareKeyWarning').style.display = 'none';
+  updateShareUrl();
+  document.getElementById('shareModal').classList.add('show');
+}
+function closeShareModal() {
+  document.getElementById('shareModal').classList.remove('show');
+}
+function updateShareUrl() {
+  const inc = document.getElementById('shareIncludeKey').checked;
+  document.getElementById('shareKeyWarning').style.display = inc ? 'block' : 'none';
+  document.getElementById('shareUrlField').value = buildShareUrl(inc);
+}
+document.getElementById('shareBtn').onclick = () => {
+  if (!config.streams || config.streams.length === 0) {
+    alert('Du hast noch keine Streams konfiguriert. Bitte zuerst in den Einstellungen Streams hinzufügen.');
+    return;
+  }
+  openShareModal();
+};
+document.getElementById('shareCloseBtn').onclick = closeShareModal;
+document.getElementById('shareIncludeKey').onchange = updateShareUrl;
+document.getElementById('shareCopyBtn').onclick = async () => {
+  const field = document.getElementById('shareUrlField');
+  try {
+    await navigator.clipboard.writeText(field.value);
+    const btn = document.getElementById('shareCopyBtn');
+    const orig = btn.textContent;
+    btn.textContent = '✓ Kopiert';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  } catch (e) {
+    // Fallback for older browsers
+    field.select();
+    document.execCommand('copy');
+  }
+};
+document.getElementById('shareModal').onclick = (e) => {
+  if (e.target.id === 'shareModal') closeShareModal();
+};
+
+// ---------- Import prompt wiring ----------
+let pendingImport = null;
+function showImportPrompt(data) {
+  pendingImport = data;
+  const count = (data.streams || []).length;
+  document.getElementById('importSummary').textContent =
+    `Der geöffnete Link enthält ${count} Stream${count === 1 ? '' : 's'} und ein Refresh-Intervall von ${data.interval || 20}s.`;
+  document.getElementById('importKeyWarn').style.display = data.apiKey ? 'block' : 'none';
+  document.getElementById('importModal').classList.add('show');
+}
+document.getElementById('importCancelBtn').onclick = () => {
+  pendingImport = null;
+  document.getElementById('importModal').classList.remove('show');
+  history.replaceState(null, '', location.pathname + location.search);
+};
+document.getElementById('importConfirmBtn').onclick = () => {
+  if (pendingImport) {
+    config.streams = (pendingImport.streams || []).map(s => ({ id: s.id, raw: s.raw || s.id }));
+    if (pendingImport.interval) config.interval = pendingImport.interval;
+    if (pendingImport.apiKey) config.apiKey = pendingImport.apiKey;
+    saveConfig();
+  }
+  pendingImport = null;
+  document.getElementById('importModal').classList.remove('show');
+  history.replaceState(null, '', location.pathname + location.search);
+  if (config.apiKey && config.streams.length > 0) {
+    fetchViewers();
+    restartTimer();
+  } else {
+    openModal();
+  }
+};
+
 // ---------- Boot ----------
 try {
   initChart();
 } catch (e) {
   console.error('Chart init failed:', e);
 }
-if (!config.apiKey || config.streams.length === 0) {
+
+// Check for shared config in URL hash
+const hashMatch = location.hash.match(/^#share=(.+)$/);
+if (hashMatch) {
+  const shared = decodeShareData(hashMatch[1]);
+  if (shared && Array.isArray(shared.streams) && shared.streams.length > 0) {
+    showImportPrompt(shared);
+  }
+} else if (!config.apiKey || config.streams.length === 0) {
   openModal();
 } else {
   fetchViewers();
