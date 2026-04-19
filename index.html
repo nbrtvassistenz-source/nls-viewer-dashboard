@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Live Viewer Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --bg-elevated: #15181d;
+    --bg-card: #1c2026;
+    --border: #2a2f37;
+    --text: #e8ecef;
+    --text-dim: #8a929b;
+    --accent: #ff3b3b;
+    --accent-glow: rgba(255, 59, 59, 0.25);
+    --green: #27d07c;
+    --yellow: #f5c518;
+    --red: #ff3b3b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+  }
+  .app {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    height: 100vh;
+    padding: 24px;
+    gap: 20px;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .logo {
+    display: flex;
+    flex-direction: column;
+    line-height: 1;
+  }
+  .logo-main {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 26px;
+    font-weight: 800;
+    font-style: italic;
+    color: #ffffff;
+    letter-spacing: -0.5px;
+  }
+  .logo-main .tv {
+    font-weight: 700;
+    font-style: italic;
+  }
+  .logo-sub {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-top: 4px;
+    text-align: right;
+    opacity: 0.75;
+  }
+  .live-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent-glow);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.85); }
+  }
+  .header-right {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  .status-badge {
+    padding: 6px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: "SF Mono", Monaco, monospace;
+    font-size: 12px;
+  }
+  .btn {
+    padding: 8px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s ease;
+  }
+  .btn:hover { background: var(--bg-elevated); border-color: var(--text-dim); }
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+    font-weight: 600;
+  }
+  .btn-primary:hover { background: #e02a2a; }
+
+  main {
+    display: grid;
+    grid-template-columns: 1.2fr 1.8fr;
+    gap: 20px;
+    min-height: 0;
+  }
+
+  .total-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .total-panel::before {
+    content: '';
+    position: absolute;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 40%);
+    opacity: 0.3;
+    pointer-events: none;
+  }
+  .total-label {
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    font-size: 14px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    position: relative;
+  }
+  .total-number {
+    font-size: clamp(72px, 14vw, 180px);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    background: linear-gradient(180deg, #ffffff 0%, #a0a0a0 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    position: relative;
+    font-feature-settings: "tnum";
+    transition: transform 0.3s;
+  }
+  .total-number.bump {
+    animation: bump 0.4s ease-out;
+  }
+  @keyframes bump {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.04); }
+    100% { transform: scale(1); }
+  }
+  .total-sub {
+    margin-top: 16px;
+    font-size: 14px;
+    color: var(--text-dim);
+    position: relative;
+  }
+  .peak {
+    margin-top: 20px;
+    font-size: 13px;
+    color: var(--yellow);
+    opacity: 0.8;
+    position: relative;
+  }
+
+  .chart-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .chart-title {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+  }
+  .chart-wrapper {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+  }
+  .time-range {
+    display: flex;
+    gap: 4px;
+    background: var(--bg-elevated);
+    padding: 3px;
+    border-radius: 6px;
+  }
+  .time-range button {
+    padding: 4px 10px;
+    font-size: 12px;
+    background: transparent;
+    color: var(--text-dim);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .time-range button.active {
+    background: var(--bg-card);
+    color: var(--text);
+  }
+
+  footer {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    align-items: center;
+  }
+  .stream-chip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .stream-chip.live { border-color: var(--green); }
+  .stream-chip.offline { opacity: 0.5; }
+  .stream-chip.error { border-color: var(--red); }
+  .chip-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .live .chip-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .error .chip-dot { background: var(--red); }
+  .chip-title {
+    font-size: 13px;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .chip-count {
+    font-family: "SF Mono", Monaco, monospace;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .footer-empty {
+    color: var(--text-dim);
+    font-size: 14px;
+    padding: 12px;
+  }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    width: 600px;
+    max-width: 90vw;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  .modal h2 {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+  .modal label {
+    display: block;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    margin-top: 16px;
+  }
+  .modal input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+  }
+  .modal input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .stream-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-top: 8px;
+  }
+  .stream-row input { flex: 1; }
+  .stream-row button {
+    padding: 8px 10px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .stream-row button:hover { color: var(--red); border-color: var(--red); }
+  .stream-row.row-duplicate {
+    border-color: var(--yellow);
+    background: rgba(245, 197, 24, 0.08);
+  }
+  .stream-row.row-error {
+    border-color: var(--red);
+    background: rgba(255, 59, 59, 0.08);
+  }
+  .row-hint {
+    font-size: 12px;
+    color: var(--yellow);
+    padding: 4px 10px 0 10px;
+    margin-top: -4px;
+  }
+  .stream-row.row-error + .row-hint { color: var(--red); }
+  .stream-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  textarea#bulkPasteInput {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: "SF Mono", Monaco, monospace;
+    resize: vertical;
+    min-height: 120px;
+  }
+  textarea#bulkPasteInput:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .add-stream-btn {
+    margin-top: 8px;
+    padding: 10px;
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text-dim);
+    border-radius: 6px;
+    cursor: pointer;
+    width: 100%;
+    font-size: 13px;
+  }
+  .add-stream-btn:hover { border-color: var(--text-dim); color: var(--text); }
+  .modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+  .help-text {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+  .help-text a { color: var(--accent); }
+  .error-msg {
+    background: rgba(255, 59, 59, 0.1);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: var(--accent);
+    font-size: 13px;
+    margin-top: 12px;
+  }
+  .success-msg {
+    background: rgba(39, 208, 124, 0.1);
+    border: 1px solid var(--green);
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: var(--green);
+    font-size: 13px;
+    margin-top: 12px;
+  }
+  .warn-msg {
+    background: rgba(245, 197, 24, 0.1);
+    border: 1px solid var(--yellow);
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: var(--yellow);
+    font-size: 13px;
+    margin-top: 12px;
+  }
+
+  /* ---------- Tablet ---------- */
+  @media (max-width: 900px) {
+    .app { padding: 16px; gap: 14px; }
+    main {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr;
+    }
+    .total-panel { padding: 24px; }
+    .chart-panel { padding: 16px; min-height: 240px; }
+  }
+
+  /* ---------- Handy ---------- */
+  @media (max-width: 600px) {
+    body { overflow: auto; }
+    .app {
+      height: auto;
+      min-height: 100vh;
+      padding: 12px;
+      gap: 12px;
+      grid-template-rows: auto auto auto;
+    }
+    header {
+      padding-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .logo-main { font-size: 20px; }
+    .logo-sub { font-size: 9px; letter-spacing: 3px; }
+    .header-right {
+      width: 100%;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+    .status-badge {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 11px;
+      padding: 5px 10px;
+    }
+    main {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .total-panel { padding: 20px 16px; }
+    .total-label { font-size: 11px; letter-spacing: 2px; }
+    .total-number { font-size: 64px; }
+    .total-sub { font-size: 13px; margin-top: 10px; }
+    .peak { font-size: 12px; margin-top: 14px; }
+    .chart-panel {
+      min-height: 200px;
+      padding: 14px;
+    }
+    .chart-title { font-size: 11px; }
+    .time-range button {
+      padding: 3px 8px;
+      font-size: 11px;
+    }
+    footer {
+      padding: 12px;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .stream-chip {
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+    .chip-title { max-width: 140px; font-size: 12px; }
+
+    /* Modal auf Handy fast vollbild */
+    .modal {
+      width: 100%;
+      max-width: 100vw;
+      max-height: 100vh;
+      height: 100vh;
+      border-radius: 0;
+      padding: 20px 16px;
+    }
+    .modal-backdrop { padding: 0; }
+    .stream-buttons {
+      grid-template-columns: 1fr;
+    }
+    .modal-actions {
+      position: sticky;
+      bottom: 0;
+      background: var(--bg-elevated);
+      padding-top: 16px;
+    }
+  }
+
+  /* Sehr kleine Handys */
+  @media (max-width: 380px) {
+    .total-number { font-size: 52px; }
+    .logo-main { font-size: 18px; }
+    .chip-title { max-width: 110px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="live-dot"></div>
+      <div class="logo">
+        <div class="logo-main">nürburgring<span class="tv">.tv</span></div>
+        <div class="logo-sub">Medienproduktion</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-badge" id="statusBadge">Lade…</div>
+      <button class="btn" id="settingsBtn">Einstellungen</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="total-panel">
+      <div class="total-label">Aktuelle Zuschauer</div>
+      <div class="total-number" id="totalNumber">—</div>
+      <div class="total-sub" id="totalSub">Keine Streams konfiguriert</div>
+      <div class="peak" id="peakInfo"></div>
+    </div>
+    <div class="chart-panel">
+      <div class="chart-header">
+        <div class="chart-title">Verlauf</div>
+        <div class="time-range">
+          <button data-range="600" class="active">10 Min</button>
+          <button data-range="1800">30 Min</button>
+          <button data-range="3600">1 Std</button>
+          <button data-range="0">Alle</button>
+        </div>
+      </div>
+      <div class="chart-wrapper">
+        <canvas id="chart"></canvas>
+      </div>
+    </div>
+  </main>
+
+  <footer id="streamList">
+    <div class="footer-empty">Füge in den Einstellungen deine Streams hinzu.</div>
+  </footer>
+</div>
+
+<!-- Settings modal -->
+<div class="modal-backdrop" id="modal">
+  <div class="modal">
+    <h2>Einstellungen</h2>
+
+    <label for="apiKey">YouTube Data API v3 Key</label>
+    <input type="password" id="apiKey" placeholder="AIza…" autocomplete="off">
+    <div class="help-text">
+      Der Key wird nur lokal im Browser gespeichert und direkt an die YouTube-API gesendet.
+      Quota: 1 Einheit pro Abfrage (alle 20s = ~4.300/Tag, Limit liegt bei 10.000).
+    </div>
+
+    <label>Refresh-Intervall (Sekunden)</label>
+    <input type="number" id="interval" min="5" max="600" value="20">
+
+    <label style="margin-top: 24px;">Streams (URL oder Video-ID)</label>
+    <div class="help-text" style="margin-bottom: 10px;">
+      Z.B. <code>https://www.youtube.com/watch?v=xxxxxxxxxxx</code>,
+      <code>https://youtu.be/xxxx</code>, <code>https://youtube.com/live/xxxx</code> oder einfach die Video-ID.
+    </div>
+    <div id="streamRows"></div>
+    <div class="stream-buttons">
+      <button class="add-stream-btn" id="addStreamBtn">+ Einzelnen Stream hinzufügen</button>
+      <button class="add-stream-btn" id="bulkPasteBtn">📋 Liste einfügen (aus Spreadsheet)</button>
+    </div>
+
+    <div id="bulkPasteArea" style="display: none; margin-top: 12px;">
+      <label style="margin-top: 0;">Einfügen aus Tabelle / Liste</label>
+      <div class="help-text" style="margin-bottom: 8px;">
+        Eine URL oder Video-ID pro Zeile. Spalten aus Excel/Google Sheets (mit Tabs getrennt) funktionieren auch — Duplikate und Leerzeilen werden automatisch ignoriert.
+      </div>
+      <textarea id="bulkPasteInput" rows="8" placeholder="https://www.youtube.com/watch?v=abc123defgh&#10;https://youtu.be/xyz987654ab&#10;kLmNoPqRsTu"></textarea>
+      <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <button class="btn btn-primary" id="bulkImportBtn">Importieren</button>
+        <button class="btn" id="bulkCancelBtn">Abbrechen</button>
+        <div id="bulkPreview" class="help-text" style="align-self: center; margin: 0;"></div>
+      </div>
+    </div>
+
+    <div id="errorBox"></div>
+
+    <div class="modal-actions">
+      <button class="btn" id="cancelBtn">Abbrechen</button>
+      <button class="btn btn-primary" id="saveBtn">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- State & Storage ----------
+const STORAGE_KEY = 'live-viewer-dashboard-v1';
+let config = loadConfig();
+let history = []; // [{t: timestamp, total: number}]
+let streamMeta = {}; // videoId -> {title, viewers, status}
+let peak = 0;
+let currentRangeSec = 600;
+let tickTimer = null;
+
+function loadConfig() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return { apiKey: '', interval: 20, streams: [] };
+}
+function saveConfig() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+}
+
+// ---------- Stream ID parsing ----------
+function extractVideoId(input) {
+  if (!input) return null;
+  input = input.trim();
+  // Already a video ID (11 chars, alphanum + _ -)
+  if (/^[a-zA-Z0-9_-]{11}$/.test(input)) return input;
+  // Try URL patterns
+  const patterns = [
+    /[?&]v=([a-zA-Z0-9_-]{11})/,
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/live\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
+  ];
+  for (const p of patterns) {
+    const m = input.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+// ---------- YouTube API ----------
+async function fetchViewers() {
+  if (!config.apiKey || config.streams.length === 0) {
+    updateStatus('Nicht konfiguriert', 'warn');
+    return;
+  }
+  const ids = config.streams.map(s => s.id).filter(Boolean);
+  if (ids.length === 0) return;
+
+  const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=${ids.join(',')}&key=${encodeURIComponent(config.apiKey)}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const msg = errData?.error?.message || res.statusText;
+      updateStatus(`API-Fehler: ${msg}`, 'error');
+      return;
+    }
+    const data = await res.json();
+    const byId = {};
+    for (const item of data.items || []) {
+      byId[item.id] = item;
+    }
+
+    let total = 0;
+    for (const s of config.streams) {
+      const item = byId[s.id];
+      if (!item) {
+        streamMeta[s.id] = { title: s.id, viewers: 0, status: 'error', msg: 'nicht gefunden' };
+        continue;
+      }
+      const lsd = item.liveStreamingDetails || {};
+      const isLive = !!lsd.actualStartTime && !lsd.actualEndTime;
+      const viewers = parseInt(lsd.concurrentViewers || '0', 10);
+      streamMeta[s.id] = {
+        title: item.snippet?.title || s.id,
+        viewers: isLive ? viewers : 0,
+        status: isLive ? 'live' : 'offline',
+      };
+      if (isLive) total += viewers;
+    }
+
+    // Record history
+    const now = Date.now();
+    history.push({ t: now, total });
+    // cap history to ~24h
+    const cutoff = now - 24 * 3600 * 1000;
+    history = history.filter(p => p.t >= cutoff);
+
+    if (total > peak) peak = total;
+
+    renderTotal(total);
+    renderChart();
+    renderStreams();
+    updateStatus(`Aktualisiert · ${new Date().toLocaleTimeString('de-DE')}`, 'ok');
+  } catch (e) {
+    console.error(e);
+    updateStatus(`Netzwerkfehler: ${e.message}`, 'error');
+  }
+}
+
+// ---------- Rendering ----------
+function formatNumber(n) {
+  return n.toLocaleString('de-DE');
+}
+function renderTotal(total) {
+  const el = document.getElementById('totalNumber');
+  const prev = el.textContent;
+  const formatted = formatNumber(total);
+  if (prev !== formatted && prev !== '—') {
+    el.classList.remove('bump');
+    void el.offsetWidth;
+    el.classList.add('bump');
+  }
+  el.textContent = formatted;
+  const liveCount = Object.values(streamMeta).filter(s => s.status === 'live').length;
+  document.getElementById('totalSub').textContent =
+    `${liveCount} von ${config.streams.length} Stream${config.streams.length !== 1 ? 's' : ''} live`;
+  if (peak > 0) {
+    document.getElementById('peakInfo').textContent = `Peak heute: ${formatNumber(peak)}`;
+  }
+}
+
+function renderStreams() {
+  const container = document.getElementById('streamList');
+  if (config.streams.length === 0) {
+    container.innerHTML = '<div class="footer-empty">Füge in den Einstellungen deine Streams hinzu.</div>';
+    return;
+  }
+  container.innerHTML = '';
+  for (const s of config.streams) {
+    const m = streamMeta[s.id] || { title: s.id, viewers: 0, status: 'offline' };
+    const chip = document.createElement('div');
+    chip.className = `stream-chip ${m.status}`;
+    chip.innerHTML = `
+      <div class="chip-dot"></div>
+      <div class="chip-title" title="${escapeHtml(m.title)}">${escapeHtml(m.title)}</div>
+      <div class="chip-count">${m.status === 'live' ? formatNumber(m.viewers) : '—'}</div>
+    `;
+    container.appendChild(chip);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function updateStatus(text, kind) {
+  const el = document.getElementById('statusBadge');
+  el.textContent = text;
+  el.style.color = kind === 'error' ? 'var(--red)'
+                 : kind === 'warn' ? 'var(--yellow)'
+                 : 'var(--text-dim)';
+}
+
+// ---------- Chart ----------
+let chart;
+function initChart() {
+  const ctx = document.getElementById('chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: [{
+        label: 'Zuschauer',
+        data: [],
+        borderColor: '#ff3b3b',
+        backgroundColor: (ctx) => {
+          const chart = ctx.chart;
+          const {ctx: c, chartArea} = chart;
+          if (!chartArea) return 'rgba(255,59,59,0.1)';
+          const g = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+          g.addColorStop(0, 'rgba(255,59,59,0.4)');
+          g.addColorStop(1, 'rgba(255,59,59,0)');
+          return g;
+        },
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#15181d',
+          borderColor: '#2a2f37',
+          borderWidth: 1,
+          titleColor: '#e8ecef',
+          bodyColor: '#e8ecef',
+          callbacks: {
+            title: (items) => new Date(items[0].parsed.x).toLocaleTimeString('de-DE'),
+            label: (item) => `${formatNumber(item.parsed.y)} Zuschauer`,
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          ticks: {
+            color: '#8a929b',
+            maxTicksLimit: 6,
+            callback: (v) => new Date(v).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }),
+          },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: '#8a929b',
+            callback: (v) => formatNumber(v),
+          },
+          grid: { color: 'rgba(255,255,255,0.06)' },
+        }
+      }
+    }
+  });
+}
+
+function renderChart() {
+  const now = Date.now();
+  let data = history;
+  if (currentRangeSec > 0) {
+    const cutoff = now - currentRangeSec * 1000;
+    data = history.filter(p => p.t >= cutoff);
+  }
+  // x-Achse ist linear (Unix-ms), wir formatieren in den ticks selber
+  if (!chart) return;
+  chart.data.datasets[0].data = data.map(p => ({ x: p.t, y: p.total }));
+  chart.update('none');
+}
+
+// ---------- Settings modal ----------
+function openModal() {
+  document.getElementById('apiKey').value = config.apiKey || '';
+  document.getElementById('interval').value = config.interval || 20;
+  const rows = document.getElementById('streamRows');
+  rows.innerHTML = '';
+  if (config.streams.length === 0) {
+    addStreamRow('');
+  } else {
+    for (const s of config.streams) addStreamRow(s.raw || s.id);
+  }
+  document.getElementById('errorBox').innerHTML = '';
+  document.getElementById('modal').classList.add('show');
+}
+function closeModal() {
+  document.getElementById('modal').classList.remove('show');
+}
+function addStreamRow(val) {
+  const row = document.createElement('div');
+  row.className = 'stream-row';
+  row.innerHTML = `
+    <input type="text" placeholder="YouTube URL oder Video-ID" value="${escapeHtml(val || '')}">
+    <button type="button" title="Entfernen">✕</button>
+  `;
+  row.querySelector('button').onclick = () => {
+    row.remove();
+    // Live-Hint-Zeile direkt darunter auch entfernen
+    const next = row.nextElementSibling;
+    if (next && next.classList.contains('row-hint-live')) next.remove();
+    checkDuplicatesLive();
+  };
+  row.querySelector('input').addEventListener('input', checkDuplicatesLive);
+  document.getElementById('streamRows').appendChild(row);
+  checkDuplicatesLive();
+}
+function saveSettings() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const interval = Math.max(5, parseInt(document.getElementById('interval').value, 10) || 20);
+  const rowEls = document.querySelectorAll('#streamRows .stream-row');
+  const streams = [];
+  const errors = [];
+  const seen = {}; // id -> first row index
+
+  // reset previous highlighting
+  rowEls.forEach(r => {
+    r.classList.remove('row-error', 'row-duplicate');
+    const hint = r.querySelector('.row-hint');
+    if (hint) hint.remove();
+  });
+
+  rowEls.forEach((rowEl, idx) => {
+    const input = rowEl.querySelector('input');
+    const raw = input.value.trim();
+    if (!raw) return;
+    const id = extractVideoId(raw);
+    if (!id) {
+      errors.push(`Zeile ${idx + 1}: Kann Video-ID nicht aus "${raw}" lesen.`);
+      rowEl.classList.add('row-error');
+      addRowHint(rowEl, 'Ungültige URL oder Video-ID');
+      return;
+    }
+    if (seen[id] !== undefined) {
+      errors.push(`Zeile ${idx + 1}: Stream "${id}" ist bereits in Zeile ${seen[id] + 1} eingetragen.`);
+      rowEl.classList.add('row-duplicate');
+      addRowHint(rowEl, `Duplikat von Zeile ${seen[id] + 1} (Video-ID: ${id})`);
+      // also mark the original row
+      rowEls[seen[id]].classList.add('row-duplicate');
+      return;
+    }
+    seen[id] = idx;
+    streams.push({ id, raw });
+  });
+
+  if (errors.length) {
+    document.getElementById('errorBox').innerHTML =
+      errors.map(e => `<div class="error-msg">${escapeHtml(e)}</div>`).join('');
+    return;
+  }
+  config = { apiKey, interval, streams };
+  saveConfig();
+  closeModal();
+  restartTimer();
+  fetchViewers();
+}
+
+function addRowHint(rowEl, text) {
+  const hint = document.createElement('div');
+  hint.className = 'row-hint';
+  hint.textContent = text;
+  rowEl.after(hint);
+}
+
+// Live-Duplikat-Check während des Tippens
+function checkDuplicatesLive() {
+  const rowEls = document.querySelectorAll('#streamRows .stream-row');
+  const idMap = {};
+  rowEls.forEach((rowEl, idx) => {
+    rowEl.classList.remove('row-duplicate');
+    const existingHint = rowEl.nextElementSibling;
+    if (existingHint && existingHint.classList.contains('row-hint-live')) {
+      existingHint.remove();
+    }
+    const raw = rowEl.querySelector('input').value.trim();
+    if (!raw) return;
+    const id = extractVideoId(raw);
+    if (!id) return;
+    if (idMap[id] !== undefined) {
+      rowEl.classList.add('row-duplicate');
+      rowEls[idMap[id]].classList.add('row-duplicate');
+      const hint = document.createElement('div');
+      hint.className = 'row-hint row-hint-live';
+      hint.textContent = `Bereits in Zeile ${idMap[id] + 1} vorhanden`;
+      rowEl.after(hint);
+    } else {
+      idMap[id] = idx;
+    }
+  });
+}
+
+function restartTimer() {
+  if (tickTimer) clearInterval(tickTimer);
+  tickTimer = setInterval(fetchViewers, (config.interval || 20) * 1000);
+}
+
+// ---------- Wiring ----------
+document.getElementById('settingsBtn').onclick = openModal;
+document.getElementById('cancelBtn').onclick = closeModal;
+document.getElementById('saveBtn').onclick = saveSettings;
+document.getElementById('addStreamBtn').onclick = () => addStreamRow('');
+
+// ---------- Bulk paste ----------
+const bulkArea = document.getElementById('bulkPasteArea');
+const bulkInput = document.getElementById('bulkPasteInput');
+const bulkPreview = document.getElementById('bulkPreview');
+
+document.getElementById('bulkPasteBtn').onclick = () => {
+  bulkArea.style.display = 'block';
+  bulkInput.value = '';
+  bulkPreview.textContent = '';
+  bulkInput.focus();
+};
+document.getElementById('bulkCancelBtn').onclick = () => {
+  bulkArea.style.display = 'none';
+};
+
+function parseBulkText(text) {
+  // Tokenize: split on newlines, tabs, commas, semicolons, whitespace
+  const tokens = text.split(/[\s,;]+/).map(t => t.trim()).filter(Boolean);
+  const result = {
+    valid: [],       // [{id, raw}]
+    duplicates: [],  // raws that were already in list
+    invalid: [],     // raws that couldn't be parsed
+  };
+  // gather existing IDs from current rows
+  const existing = {};
+  document.querySelectorAll('#streamRows .stream-row input').forEach(inp => {
+    const id = extractVideoId(inp.value.trim());
+    if (id) existing[id] = true;
+  });
+  const seenInThisBatch = {};
+  for (const tok of tokens) {
+    const id = extractVideoId(tok);
+    if (!id) {
+      result.invalid.push(tok);
+      continue;
+    }
+    if (existing[id] || seenInThisBatch[id]) {
+      result.duplicates.push(tok);
+      continue;
+    }
+    seenInThisBatch[id] = true;
+    result.valid.push({ id, raw: tok });
+  }
+  return result;
+}
+
+bulkInput.addEventListener('input', () => {
+  const parsed = parseBulkText(bulkInput.value);
+  const parts = [];
+  if (parsed.valid.length) parts.push(`${parsed.valid.length} neu`);
+  if (parsed.duplicates.length) parts.push(`${parsed.duplicates.length} Duplikate`);
+  if (parsed.invalid.length) parts.push(`${parsed.invalid.length} ungültig`);
+  bulkPreview.textContent = parts.length ? `Vorschau: ${parts.join(' · ')}` : '';
+});
+
+document.getElementById('bulkImportBtn').onclick = () => {
+  const parsed = parseBulkText(bulkInput.value);
+  if (parsed.valid.length === 0 && parsed.duplicates.length === 0 && parsed.invalid.length === 0) {
+    bulkPreview.textContent = 'Nichts zu importieren.';
+    return;
+  }
+
+  // Entferne leere Eingabe-Zeilen, bevor wir neue anhängen
+  document.querySelectorAll('#streamRows .stream-row').forEach(rowEl => {
+    const input = rowEl.querySelector('input');
+    if (!input.value.trim()) {
+      const hint = rowEl.nextElementSibling;
+      if (hint && hint.classList.contains('row-hint-live')) hint.remove();
+      rowEl.remove();
+    }
+  });
+
+  for (const s of parsed.valid) {
+    addStreamRow(s.raw);
+  }
+
+  // Summary in error box so der user Feedback sieht
+  const msgs = [];
+  if (parsed.valid.length) msgs.push(`<div class="success-msg">${parsed.valid.length} Stream${parsed.valid.length !== 1 ? 's' : ''} hinzugefügt.</div>`);
+  if (parsed.duplicates.length) msgs.push(`<div class="warn-msg">${parsed.duplicates.length} Duplikat${parsed.duplicates.length !== 1 ? 'e' : ''} übersprungen.</div>`);
+  if (parsed.invalid.length) msgs.push(`<div class="error-msg">${parsed.invalid.length} Eintrag (${parsed.invalid.slice(0,3).map(escapeHtml).join(', ')}${parsed.invalid.length > 3 ? '…' : ''}) konnten nicht gelesen werden.</div>`);
+  document.getElementById('errorBox').innerHTML = msgs.join('');
+
+  bulkArea.style.display = 'none';
+  bulkInput.value = '';
+};
+document.getElementById('modal').onclick = (e) => {
+  if (e.target.id === 'modal') closeModal();
+};
+document.querySelectorAll('.time-range button').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('.time-range button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    currentRangeSec = parseInt(b.dataset.range, 10);
+    renderChart();
+  };
+});
+
+// ---------- Boot ----------
+try {
+  initChart();
+} catch (e) {
+  console.error('Chart init failed:', e);
+}
+if (!config.apiKey || config.streams.length === 0) {
+  openModal();
+} else {
+  fetchViewers();
+  restartTimer();
+}
+</script>
+</body>
+</html>
