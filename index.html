@@ -647,15 +647,17 @@
       Diese URL enthält deine komplette Konfiguration. Wer sie öffnet, bekommt das gleiche Setup automatisch angeboten.
     </div>
 
-    <label style="display: flex; align-items: center; gap: 8px; margin-top: 0; cursor: pointer;">
-      <input type="checkbox" id="shareIncludeKey" style="width: auto; margin: 0;">
+    <label style="display: flex; align-items: center; gap: 8px; margin-top: 0; cursor: pointer; font-size: 15px;">
+      <input type="checkbox" id="shareIncludeKey" style="width: 18px; height: 18px; margin: 0; cursor: pointer;">
       <span>API-Key mit einschließen</span>
     </label>
     <div id="shareKeyWarning" class="help-text" style="margin-top: 6px; color: #f0a868; display: none;">
       ⚠️ Mit eingeschlossenem Key kann jeder, der den Link hat, deine YouTube-API-Quota verbrauchen. Nur im internen Team teilen — oder den Key in der Google-Cloud-Console auf eine Domain beschränken.
     </div>
 
-    <label style="margin-top: 20px;">Link</label>
+    <div id="shareStatus" style="margin-top: 16px; padding: 10px 14px; background: rgba(255,255,255,0.04); border-radius: 6px; font-size: 13px;"></div>
+
+    <label style="margin-top: 16px;">Link</label>
     <textarea id="shareUrlField" readonly rows="4" style="font-family: ui-monospace, monospace; font-size: 12px;"></textarea>
 
     <div class="modal-actions">
@@ -1203,8 +1205,28 @@ function closeShareModal() {
 }
 function updateShareUrl() {
   const inc = document.getElementById('shareIncludeKey').checked;
+  const hasKey = !!(config.apiKey);
+  const url = buildShareUrl(inc);
+  const streamCount = (config.streams || []).length;
+
   document.getElementById('shareKeyWarning').style.display = inc ? 'block' : 'none';
-  document.getElementById('shareUrlField').value = buildShareUrl(inc);
+  document.getElementById('shareUrlField').value = url;
+
+  // Live status: confirm exactly what is in the URL + length
+  const keyPart = inc && hasKey
+    ? `<strong style="color: #6bc27a;">+ API-Key (im Link enthalten)</strong>`
+    : (inc && !hasKey
+        ? `<strong style="color: #e76f6f;">API-Key nicht gesetzt — kein Key im Link</strong>`
+        : `<span style="color: #8a929b;">API-Key NICHT im Link</span>`);
+  document.getElementById('shareStatus').innerHTML =
+    `Enthält: <strong>${streamCount} Stream${streamCount === 1 ? '' : 's'}</strong> &middot; ` +
+    keyPart + ` &middot; <span style="color: #8a929b;">${url.length} Zeichen</span>`;
+
+  // Update copy button label to make it obvious
+  const btn = document.getElementById('shareCopyBtn');
+  if (!btn.dataset.copied) {
+    btn.textContent = inc && hasKey ? 'Link mit API-Key kopieren' : 'Link kopieren';
+  }
 }
 document.getElementById('shareBtn').onclick = () => {
   if (!config.streams || config.streams.length === 0) {
@@ -1214,20 +1236,29 @@ document.getElementById('shareBtn').onclick = () => {
   openShareModal();
 };
 document.getElementById('shareCloseBtn').onclick = closeShareModal;
-document.getElementById('shareIncludeKey').onchange = updateShareUrl;
+// Double-wire to be safe across browsers / input events
+document.getElementById('shareIncludeKey').addEventListener('change', updateShareUrl);
+document.getElementById('shareIncludeKey').addEventListener('click', () => setTimeout(updateShareUrl, 0));
 document.getElementById('shareCopyBtn').onclick = async () => {
-  const field = document.getElementById('shareUrlField');
+  // Rebuild fresh based on current checkbox state — avoids any stale state
+  updateShareUrl();
+  const url = document.getElementById('shareUrlField').value;
+  const btn = document.getElementById('shareCopyBtn');
   try {
-    await navigator.clipboard.writeText(field.value);
-    const btn = document.getElementById('shareCopyBtn');
-    const orig = btn.textContent;
-    btn.textContent = '✓ Kopiert';
-    setTimeout(() => { btn.textContent = orig; }, 1500);
+    await navigator.clipboard.writeText(url);
   } catch (e) {
-    // Fallback for older browsers
+    const field = document.getElementById('shareUrlField');
     field.select();
     document.execCommand('copy');
   }
+  btn.dataset.copied = '1';
+  const orig = document.getElementById('shareIncludeKey').checked && config.apiKey
+    ? 'Link mit API-Key kopieren' : 'Link kopieren';
+  btn.textContent = '✓ Kopiert';
+  setTimeout(() => {
+    delete btn.dataset.copied;
+    btn.textContent = orig;
+  }, 1500);
 };
 document.getElementById('shareModal').onclick = (e) => {
   if (e.target.id === 'shareModal') closeShareModal();
