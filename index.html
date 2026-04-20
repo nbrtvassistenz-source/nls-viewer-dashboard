@@ -820,28 +820,65 @@ function extractVideoId(input) {
 }
 
 // ---------- YouTube API ----------
+const VIDEO_ID_RE = /^[a-zA-Z0-9_-]{11}$/;
+const API_CHUNK_SIZE = 50; // YouTube videos.list hard limit
+
 async function fetchViewers() {
   if (!config.apiKey || config.streams.length === 0) {
     updateStatus('Nicht konfiguriert', 'warn');
     return;
   }
-  const ids = config.streams.map(s => s.id).filter(Boolean);
-  if (ids.length === 0) return;
 
-  const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails,statistics&id=${ids.join(',')}&key=${encodeURIComponent(config.apiKey)}`;
+  // Validate + dedupe IDs; separate good from bad
+  const seen = new Set();
+  const validIds = [];
+  const invalidIds = [];
+  for (const s of config.streams) {
+    const id = (s.id || '').trim();
+    if (!id) continue;
+    if (!VIDEO_ID_RE.test(id)) {
+      invalidIds.push(id);
+      continue;
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    validIds.push(id);
+  }
+
+  if (invalidIds.length > 0) {
+    console.warn('Ungültige Video-IDs übersprungen:', invalidIds);
+  }
+
+  if (validIds.length === 0) {
+    updateStatus('Keine gültigen Video-IDs konfiguriert', 'error');
+    return;
+  }
+
+  // Chunk into groups of 50 and fetch in parallel
+  const chunks = [];
+  for (let i = 0; i < validIds.length; i += API_CHUNK_SIZE) {
+    chunks.push(validIds.slice(i, i + API_CHUNK_SIZE));
+  }
 
   try {
-    const res = await fetch(url);
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      const msg = errData?.error?.message || res.statusText;
-      updateStatus(`API-Fehler: ${msg}`, 'error');
-      return;
-    }
-    const data = await res.json();
+    const results = await Promise.all(chunks.map(async (ids) => {
+      const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails,statistics&id=${ids.join(',')}&key=${encodeURIComponent(config.apiKey)}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData?.error?.message || res.statusText;
+        const err = new Error(msg);
+        err.httpStatus = res.status;
+        throw err;
+      }
+      return res.json();
+    }));
+
     const byId = {};
-    for (const item of data.items || []) {
-      byId[item.id] = item;
+    for (const data of results) {
+      for (const item of data.items || []) {
+        byId[item.id] = item;
+      }
     }
 
     let total = 0;
@@ -894,7 +931,11 @@ async function fetchViewers() {
     updateStatus(`Aktualisiert · ${new Date().toLocaleTimeString('de-DE')}`, 'ok');
   } catch (e) {
     console.error(e);
-    updateStatus(`Netzwerkfehler: ${e.message}`, 'error');
+    if (e.httpStatus) {
+      updateStatus(`API-Fehler: ${e.message}`, 'error');
+    } else {
+      updateStatus(`Netzwerkfehler: ${e.message}`, 'error');
+    }
   }
 }
 
